@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package clock;
+
+service MachineService { rpc SendMessage(ClockMessage) returns (Ack); }
+
+message ClockMessage {
+  int32 logical_time = 1;
+  string sender_id = 2;
+}
+
+message Ack {}

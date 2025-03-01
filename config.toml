@@ -1,0 +1,4 @@
+[machines]
+A = { port = 50051, ticks = 3, log_path = "logs/A.log" }
+B = { port = 50052, ticks = 5, log_path = "logs/B.log" }
+C = { port = 50053, ticks = 2, log_path = "logs/C.log" }
