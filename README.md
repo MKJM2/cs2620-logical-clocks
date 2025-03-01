@@ -12,7 +12,7 @@ A simulation of distributed systems with logical clocks. This project models mul
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/cs2620-logical-clocks.git
+   git clone https://github.com/MKJM2/cs2620-logical-clocks.git
    cd cs2620-logical-clocks
    ```
 
