@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import clock_pb2 as clock__pb2
+from . import clock_pb2 as clock__pb2
 
 GRPC_GENERATED_VERSION = '1.70.0'
 GRPC_VERSION = grpc.__version__

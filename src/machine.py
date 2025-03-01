@@ -6,7 +6,7 @@ from typing import Dict
 import grpc
 from grpc import aio
 
-from protos import clock_pb2, clock_pb2_grpc
+from .protos import clock_pb2, clock_pb2_grpc
 
 class Machine(clock_pb2_grpc.MachineServiceServicer):
     def __init__(self, machine_id: str, config: Dict, peers: Dict):

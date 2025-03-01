@@ -1,10 +1,11 @@
+import sys
 import asyncio
 import tomli
 from pathlib import Path
 from typing import Dict
 import signal
 from rich.console import Console
-from machine import Machine
+from .machine import Machine
 
 console = Console()
 
@@ -22,7 +23,7 @@ class Orchestrator:
         peers = {k:v for k,v in self.config.items() if k != machine_id}
         
         proc = await asyncio.create_subprocess_exec(
-            'python', '-m', 'src.machine',
+            sys.executable, '-m', 'src.machine',
             machine_id,
             str(config['port']),
             str(config['ticks']),
@@ -61,7 +62,7 @@ class Orchestrator:
                 console.print(f"[bold]{machine_id}:[/] {len(log_path.read_text().splitlines())} events")
 
 async def main():
-    orchestrator = Orchestrator('configs/machines.toml')
+    orchestrator = Orchestrator('config.toml')
     await orchestrator.run()
 
 if __name__ == '__main__':
