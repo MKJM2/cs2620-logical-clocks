@@ -1,3 +1,4 @@
+import os
 import sys
 import asyncio
 import tomli
@@ -46,7 +47,7 @@ class orchestrator:
             str(config['port']),
             str(config['ticks']),
             config['log_path'],
-            env={**self._peer_env(peers)},
+            env={**os.environ, **self._peer_env(peers)},
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
