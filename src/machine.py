@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import random
 import sys
@@ -7,16 +8,21 @@ from pathlib import Path
 from typing import Dict
 
 from grpc import aio
-from rich.console import Console
 
 from .protos import clock_pb2, clock_pb2_grpc
 
-console = Console()
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 
 class machine(clock_pb2_grpc.MachineServiceServicer):
     def __init__(self, machine_id: str, config: dict, peers: dict):
         self.id = machine_id
+        self.logger = logging.getLogger(f"machine-{machine_id}")
         self.clock = 0
         self.ticks_per_sec = config["ticks"]
         self.log_path = Path(config["log_path"])
@@ -24,22 +30,27 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
         self.queue = asyncio.Queue()
         self.stubs: Dict[str, clock_pb2_grpc.MachineServiceStub] = {}
         self.server = aio.server()
+        
+        # Node topology of our machines according to config file
+        self.all_machine_ids = sorted([self.id] + list(peers.keys()))
+        self.my_position = self.all_machine_ids.index(self.id)
+        self.total_machines = len(self.all_machine_ids)
+        self.next_machine = self.all_machine_ids[(self.my_position + 1) % self.total_machines]
+        self.after_next_machine = self.all_machine_ids[(self.my_position + 2) % self.total_machines]
+
         self._setup_logging()
         self._setup_server(config["port"])
-        console.log(
-            f"machine {self.id} initialized with {self.ticks_per_sec} ticks/sec",
-            style="bold blue",
-        )
+        self.logger.info(f"initialized with {self.ticks_per_sec} ticks/sec")
 
     def _setup_logging(self):
         self.log_path.parent.mkdir(exist_ok=True)
         self.log_path.write_text("")
-        console.log(f"machine {self.id}: logging to {self.log_path}", style="green")
+        self.logger.info(f"logging to {self.log_path}")
 
     def _setup_server(self, port: int):
         clock_pb2_grpc.add_MachineServiceServicer_to_server(self, self.server)
         self.server.add_insecure_port(f"[::]:{port}")
-        console.log(f"machine {self.id}: server set up on port {port}", style="green")
+        self.logger.info(f"server set up on port {port}")
 
     async def connect_to_peers(self):
         for peer_id, peer_config in self.peers.items():
@@ -47,71 +58,57 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
                 continue
             channel = aio.insecure_channel(f"localhost:{peer_config['port']}")
             self.stubs[peer_id] = clock_pb2_grpc.MachineServiceStub(channel)
-            console.log(
-                f"machine {self.id}: connected to peer {peer_id} on port {peer_config['port']}",
-                style="cyan",
-            )
+            self.logger.info(f"connected to peer {peer_id} on port {peer_config['port']}")
 
     async def SendMessage(self, request, context):
         await self.queue.put(request)
-        console.log(
-            f"machine {self.id}: received message from {request.sender_id}, logical time {request.logical_time}",
-            style="magenta",
-        )
+        self.logger.info(f"received message from {request.sender_id}, logical time {request.logical_time}")
         return clock_pb2.Ack()
 
     async def run(self):
-        console.log(f"machine {self.id}: starting server...", style="bold blue")
+        self.logger.info("starting server...")
         await self.server.start()
-        console.log(f"machine {self.id}: server started", style="bold green")
+        self.logger.info("server started")
         await self.connect_to_peers()
         try:
+            interval = 1.0 / self.ticks_per_sec
+            next_tick = time.monotonic()  # More precise timing
+            
             while True:
-                start_time = time.time()
                 await self.process_tick()
-                elapsed = time.time() - start_time
-                await asyncio.sleep(max(0, 1 / self.ticks_per_sec - elapsed))
+                
+                # Maintain exact tick intervals
+                now = time.monotonic()
+                next_tick += interval
+                sleep_time = next_tick - now
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
         except asyncio.CancelledError:
-            console.log(f"machine {self.id}: shutting down...", style="bold red")
+            self.logger.info("shutting down...")
             await self.server.stop(grace=None)
-
+    
     async def process_tick(self):
         if not self.queue.empty():
             msg = await self.queue.get()
             self.clock = max(self.clock, msg.logical_time) + 1
             self._log_event("RECV", msg.sender_id)
-            console.log(
-                f"machine {self.id}: processed message from {msg.sender_id}, clock now {self.clock}",
-                style="magenta",
-            )
+            self.logger.info(f"processed message from {msg.sender_id}, clock now {self.clock}")
         else:
             rand_val = random.randint(1, 10)
             self.clock += 1
-            if rand_val == 1:
-                target_id = "B" if self.id == "A" else "A"
-                await self._send_to(target_id)
-                console.log(
-                    f"machine {self.id}: sent message to {target_id}, clock now {self.clock}",
-                    style="cyan",
-                )
-            elif rand_val == 2:
-                await self._send_to("C")
-                console.log(
-                    f"machine {self.id}: sent message to C, clock now {self.clock}",
-                    style="cyan",
-                )
-            elif rand_val == 3:
+            
+            if rand_val == 1:  # Send to the next machine
+                await self._send_to(self.next_machine)
+                self.logger.info(f"sent message to {self.next_machine} (next), clock now {self.clock}")
+            elif rand_val == 2:  # Send to the machine after next
+                await self._send_to(self.after_next_machine)
+                self.logger.info(f"sent message to {self.after_next_machine} (after next), clock now {self.clock}")
+            elif rand_val == 3:  # Broadcast to all peers
                 await self._send_broadcast()
-                console.log(
-                    f"machine {self.id}: broadcast message to all peers, clock now {self.clock}",
-                    style="cyan",
-                )
-            else:
+                self.logger.info(f"broadcast message to all peers, clock now {self.clock}")
+            else:  # Internal event
                 self._log_event("INTERNAL")
-                console.log(
-                    f"machine {self.id}: internal event, clock now {self.clock}",
-                    style="yellow",
-                )
+                self.logger.info(f"internal event, clock now {self.clock}")
 
     async def _send_to(self, target_id: str):
         stub = self.stubs.get(target_id)
@@ -140,10 +137,7 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
 
 async def start_machine_from_args():
     if len(sys.argv) < 5:
-        console.log(
-            "usage: python -m src.machine <machine_id> <port> <ticks> <log_path>",
-            style="bold red",
-        )
+        logging.error("usage: python -m src.machine <machine_id> <port> <ticks> <log_path>")
         sys.exit(1)
     machine_id = sys.argv[1]
     port = int(sys.argv[2])

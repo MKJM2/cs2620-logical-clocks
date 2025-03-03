@@ -51,50 +51,52 @@ def setup_project() -> None:
     env["UV_PREVIEW"] = "1"
     run_command([str(venv_python), "-m", "uv", "pip", "install", "-e", "."], env=env)
 
-
-def run_project() -> None:
+def run_project(extra_args: list[str]) -> None:
     venv_python: Path = get_venv_python()
-    run_command([str(venv_python), "-m", "src.orchestrator"])
-
+    run_command([str(venv_python), "-m", "src.orchestrator"] + extra_args)
 
 def run_lint() -> None:
     venv_python: Path = get_venv_python()
     run_command([str(venv_python), "-m", "ruff", "check"])
 
-
 def run_type() -> None:
     venv_python: Path = get_venv_python()
     run_command([str(venv_python), "-m", "mypy", "src"])
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Project setup and execution utility.")
     parser.add_argument(
         "command",
-        choices=["setup", "run", "lint", "type", "all"],
+        choices=["setup", "run", "lint", "type", "check", "all"],
         nargs="?",
         default="run",
         help="command to execute: setup, run, lint, type, or all (lint & type then run)",
+    )
+    parser.add_argument(
+        "extra_args",
+        nargs=argparse.REMAINDER,
+        help="additional arguments to pass to the underlying command",
     )
     args = parser.parse_args()
 
     if args.command == "setup":
         setup_project()
     elif args.command == "run":
-        setup_project()
-        run_project()
+        run_project(args.extra_args)
     elif args.command == "lint":
-        setup_project()
         run_lint()
     elif args.command == "type":
-        setup_project()
+        run_type()
+    elif args.command == "check":
+        run_lint()
         run_type()
     elif args.command == "all":
         setup_project()
         run_lint()
         run_type()
-        run_project()
+        run_project(args.extra_args)
 
 
 if __name__ == "__main__":
     main()
+
