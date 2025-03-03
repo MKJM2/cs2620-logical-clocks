@@ -7,16 +7,42 @@ import time
 from pathlib import Path
 from typing import Dict
 
+import grpc
 from grpc import aio
 
 from .protos import clock_pb2, clock_pb2_grpc
+
+### Logging configuration for immediate flushing to orchestrator parent
+
+class FlushStreamHandler(logging.StreamHandler):
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout,
+    force=True
+)
+
+# Remove preexisting handlers (if any) and install our flush-capable one.
+root_logger = logging.getLogger()
+root_logger.handlers.clear()
+handler = FlushStreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+handler.setFormatter(formatter)
+root_logger.addHandler(handler)
+root_logger.setLevel(logging.INFO)
+
+# Make sure the output is flushed when `--verbose` flag is present
+sys.stdout.reconfigure(line_buffering=True)
 
 
 class machine(clock_pb2_grpc.MachineServiceServicer):
@@ -30,7 +56,7 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
         self.queue = asyncio.Queue()
         self.stubs: Dict[str, clock_pb2_grpc.MachineServiceStub] = {}
         self.server = aio.server()
-        
+
         # Node topology of our machines according to config file
         self.all_machine_ids = sorted([self.id] + list(peers.keys()))
         self.my_position = self.all_machine_ids.index(self.id)
@@ -56,9 +82,22 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
         for peer_id, peer_config in self.peers.items():
             if peer_id == self.id:
                 continue
-            channel = aio.insecure_channel(f"localhost:{peer_config['port']}")
-            self.stubs[peer_id] = clock_pb2_grpc.MachineServiceStub(channel)
-            self.logger.info(f"connected to peer {peer_id} on port {peer_config['port']}")
+
+            for attempt in range(3):
+                try:
+                    channel = aio.insecure_channel(f"localhost:{peer_config['port']}")
+                    stub = clock_pb2_grpc.MachineServiceStub(channel)
+                    # Optionally perform a simple RPC (if available) here to check health.
+                    # For now, we assume if we can create the stub without exception,
+                    # the connection will eventually be established.
+                    self.stubs[peer_id] = stub
+                    self.logger.info(f"connected to peer {peer_id} on port {peer_config['port']}")
+                    break
+                except grpc.aio.AioRpcError as e:
+                    self.logger.warning(f"failed to connect to {peer_id}, attempt {attempt}: {e}")
+                    await asyncio.sleep(0.5)
+            else:
+                self.logger.error(f"Could not connect to peer {peer_id}")
 
     async def SendMessage(self, request, context):
         await self.queue.put(request)
@@ -68,25 +107,22 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
     async def run(self):
         self.logger.info("starting server...")
         await self.server.start()
+        await asyncio.sleep(0.5)  # Simple, but prevents race conditions w/ other machines
         self.logger.info("server started")
         await self.connect_to_peers()
         try:
             interval = 1.0 / self.ticks_per_sec
-            next_tick = time.monotonic()  # More precise timing
-            
             while True:
+                start = time.monotonic()
                 await self.process_tick()
-                
-                # Maintain exact tick intervals
-                now = time.monotonic()
-                next_tick += interval
-                sleep_time = next_tick - now
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
+                elapsed = time.monotonic() - start
+                await asyncio.sleep(max(0, interval - elapsed))
+
         except asyncio.CancelledError:
             self.logger.info("shutting down...")
-            await self.server.stop(grace=None)
-    
+            await self.server.stop(grace=1)
+            await self.server.wait_for_termination()
+
     async def process_tick(self):
         if not self.queue.empty():
             msg = await self.queue.get()
@@ -96,7 +132,7 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
         else:
             rand_val = random.randint(1, 10)
             self.clock += 1
-            
+
             if rand_val == 1:  # Send to the next machine
                 await self._send_to(self.next_machine)
                 self.logger.info(f"sent message to {self.next_machine} (next), clock now {self.clock}")

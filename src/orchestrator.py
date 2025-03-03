@@ -1,10 +1,10 @@
+import argparse
 import asyncio
 import json
 import os
 import signal
 import sys
 import time
-import argparse
 from pathlib import Path
 
 import tomli
@@ -50,19 +50,20 @@ class orchestrator:
         )
         proc = await asyncio.create_subprocess_exec(
             sys.executable,
+            "-u",  # Force unbuffered binary stdout and stderr
             "-m",
             "src.machine",
             machine_id,
             str(config["port"]),
             str(config["ticks"]),
             config["log_path"],
-            env={**os.environ, **self._peer_env(peers)},
+            env={**os.environ, **self._peer_env(peers), "PYTHONUNBUFFERED": "1"},
             stdout=asyncio.subprocess.PIPE if self.verbose else asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE if self.verbose else asyncio.subprocess.DEVNULL,
         )
         self.processes[machine_id] = proc
         peers_file.unlink(missing_ok=True)
-        
+
         # Only monitor process output in verbose mode
         if self.verbose:
             asyncio.create_task(self._monitor_process_output(machine_id, proc))
@@ -71,10 +72,15 @@ class orchestrator:
         self, machine_id: str, proc: asyncio.subprocess.Process
     ):
         while True:
-            line = await proc.stdout.readline()
-            if not line:
-                break
-            console.log(f"[dim]{machine_id}:[/] {line.decode().strip()}")
+            stdout_line = await proc.stdout.readline()
+            if stdout_line:
+                console.log(f"[dim]{machine_id} (stdout): {stdout_line.decode().strip()}")
+            else:
+                stderr_line = await proc.stderr.readline()
+                if stderr_line:
+                    console.log(f"[dim]{machine_id} (stderr): {stderr_line.decode().strip()}")
+                else:
+                    break
 
     def _peer_env(self, peers: dict) -> dict:
         return {"PEERS": ",".join(f"{k}:{v['port']}" for k, v in peers.items())}
@@ -100,7 +106,7 @@ class orchestrator:
         except asyncio.CancelledError:
             console.log("[bold red]cancelled![/]")
             await self._shutdown_all_machines()
-    
+
     def _generate_status_table(self) -> Table:
         # Calculate average logical clock across all machines for drift calculation
         all_clocks = {}
@@ -110,9 +116,9 @@ class orchestrator:
                 log_lines = log_path.read_text().splitlines()
                 if log_lines:
                     all_clocks[mid] = int(log_lines[-1].split("|")[1])
-        
+
         avg_clock = sum(all_clocks.values()) / max(1, len(all_clocks))
-        
+
         # Create the table with new metrics
         table = Table(
             title=f"logical clocks simulation (running for {int(time.time() - self.start_time)}s)"
@@ -124,26 +130,26 @@ class orchestrator:
         table.add_column("Clock Drift")
         table.add_column("Max Jump")
         table.add_column("Events %")
-        
+
         for mid in self.config:
             log_path = Path(self.config[mid]["log_path"])
             ticks = self.config[mid]["ticks"]
-            
+
             if not log_path.exists() or log_path.stat().st_size == 0:
                 table.add_row(mid, str(ticks), "0", "0.0", "0", "0", "N/A")
                 continue
-                
+
             log_lines = log_path.read_text().splitlines()
             if not log_lines:
                 table.add_row(mid, str(ticks), "0", "0.0", "0", "0", "N/A")
                 continue
-                
+
             # Parse log entries
             timestamps = []
             clock_values = []
             event_types = {"internal": 0, "send": 0, "recv": 0, "broadcast": 0}
             queue_sizes = []
-            
+
             for line in log_lines:
                 parts = line.split("|")
                 if len(parts) >= 4:
@@ -153,15 +159,15 @@ class orchestrator:
                     if event_type in event_types:
                         event_types[event_type] += 1
                     queue_sizes.append(int(parts[3]))
-            
+
             # Calculate metrics
             last_clock = clock_values[-1]
             clock_drift = last_clock - avg_clock
-            
+
             # Calculate clock jumps (differences between consecutive values)
-            clock_jumps = [j - i for i, j in zip(clock_values[:-1], clock_values[1:])]
+            clock_jumps = [j - i for i, j in zip(clock_values[:-1], clock_values[1:], strict=False)]
             max_jump = max(clock_jumps) if clock_jumps else 0
-            
+
             # Calculate clock rate (logical clock ticks per second of real time)
             if len(timestamps) >= 2:
                 elapsed_time = timestamps[-1] - timestamps[0]
@@ -169,7 +175,7 @@ class orchestrator:
                 clock_rate = clock_change / max(0.1, elapsed_time)  # Avoid division by zero
             else:
                 clock_rate = 0
-                
+
             # Calculate event distribution
             total_events = sum(event_types.values())
             event_dist = ""
@@ -178,7 +184,7 @@ class orchestrator:
                 event_dist += f"{event_types['send']*100/total_events:.0f}/"
                 event_dist += f"{event_types['recv']*100/total_events:.0f}/"
                 event_dist += f"{event_types['broadcast']*100/total_events:.0f}"
-                
+
             # Add row to table with all metrics
             table.add_row(
                 f"[bold]{mid}[/]",
@@ -189,12 +195,12 @@ class orchestrator:
                 str(max_jump),
                 event_dist  # I%/S%/R%/B%
             )
-            
+
         return table
 
     def _analyze_logs(self):
         console.rule("[bold]log analysis")
-        
+
         # Prepare dictionaries for metrics
         max_clocks = {}
         avg_queue_sizes = {}
@@ -205,21 +211,21 @@ class orchestrator:
             mid: {"internal": 0, "send": 0, "recv": 0, "broadcast": 0}
             for mid in self.config
         }
-        
+
         for mid in self.config:
             log_path = Path(self.config[mid]["log_path"])
             if not log_path.exists() or log_path.stat().st_size == 0:
                 continue
-                
+
             log_lines = log_path.read_text().splitlines()
             if not log_lines:
                 continue
-                
+
             # Parse logs for analysis
             timestamps = []
             clock_values = []
             queue_sizes = []
-            
+
             for line in log_path.read_text().splitlines():
                 parts = line.split("|")
                 if len(parts) >= 4:
@@ -229,23 +235,23 @@ class orchestrator:
                     if event_type in event_types[mid]:
                         event_types[mid][event_type] += 1
                     queue_sizes.append(int(parts[3]))
-                    
+
             # Calculate metrics
             if clock_values:
                 max_clocks[mid] = max(clock_values)
-                
+
                 # Calculate jumps in clock values
-                clock_jumps = [j - i for i, j in zip(clock_values[:-1], clock_values[1:])]
+                clock_jumps = [j - i for i, j in zip(clock_values[:-1], clock_values[1:], strict=False)]
                 if clock_jumps:
                     max_jumps[mid] = max(clock_jumps)
                 else:
                     max_jumps[mid] = 0
-                    
+
                 # Calculate average and max queue sizes
                 if queue_sizes:
                     avg_queue_sizes[mid] = sum(queue_sizes) / len(queue_sizes)
                     max_queue_sizes[mid] = max(queue_sizes)
-                    
+
                 # Calculate clock rate
                 if len(timestamps) >= 2:
                     elapsed_time = timestamps[-1] - timestamps[0]
@@ -253,19 +259,19 @@ class orchestrator:
                     clock_rates[mid] = clock_change / max(0.1, elapsed_time)
                 else:
                     clock_rates[mid] = 0
-        
+
         # Print analysis results
         console.log(f"Maximum logical clock values: {max_clocks}")
         console.log(f"Maximum single-step clock jumps: {max_jumps}")
         console.log(f"Average clock rates (ticks/sec): {clock_rates}")
         console.log(f"Average queue sizes: {avg_queue_sizes}")
         console.log(f"Maximum queue sizes: {max_queue_sizes}")
-        
+
         # Calculate the drift between machines
         if len(max_clocks) >= 2:
             max_drift = max(max_clocks.values()) - min(max_clocks.values())
             console.log(f"Maximum clock drift between machines: {max_drift}")
-        
+
         # Print event type distribution
         console.log("Event type distribution:")
         for mid, events in event_types.items():
@@ -295,12 +301,12 @@ class orchestrator:
 
 async def main():
     parser = argparse.ArgumentParser(description="Logical clock simulation orchestrator")
-    parser.add_argument('-v', '--verbose', action='store_true', 
+    parser.add_argument('-v', '--verbose', action='store_true',
                         help='Enable verbose output from machine processes')
     parser.add_argument('-c', '--config', default="config.toml",
                         help='Path to configuration file (default: config.toml)')
     args = parser.parse_args()
-    
+
     orch = orchestrator(args.config, verbose=args.verbose)
     await orch.run()
 

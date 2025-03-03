@@ -53,7 +53,10 @@ def setup_project() -> None:
 
 def run_project(extra_args: list[str]) -> None:
     venv_python: Path = get_venv_python()
-    run_command([str(venv_python), "-m", "src.orchestrator"] + extra_args)
+    try:
+        run_command([str(venv_python), "-m", "src.orchestrator"] + extra_args)
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 def run_lint() -> None:
     venv_python: Path = get_venv_python()
