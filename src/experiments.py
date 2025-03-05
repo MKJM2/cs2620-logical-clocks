@@ -1,6 +1,5 @@
 """
-Enhanced experiment framework for logical clocks simulation.
-Supports multiple trials and structured configuration.
+Experiment framework for logical clocks simulation.
 """
 from dataclasses import dataclass, field
 from enum import Enum
@@ -20,6 +19,7 @@ class ExperimentType(Enum):
     CLOCK_RATES = "clock_rates"
     TOPOLOGY = "topology"
     SCALE = "scale"
+    COMMUNICATION = "communication"
 
 
 @dataclass
@@ -31,7 +31,7 @@ class Experiment:
     machines: Dict[str, MachineConfig]
     trials: int = 1
     base_log_dir: str = "logs"
-    timeout: int = 60  # seconds
+    timeout: int = 60  # Default timeout in seconds
     
     def get_log_path(self, machine_id: str, trial: int) -> str:
         """Generate log path for a specific machine and trial."""
@@ -54,42 +54,118 @@ class Experiment:
 
 # Define available experiments
 EXPERIMENTS: Dict[str, Experiment] = {
+    # 1. Balanced system - all machines at same rate
+    "balanced": Experiment(
+        name="balanced",
+        description="All machines running at the same clock rate",
+        type=ExperimentType.CLOCK_RATES,
+        machines={
+            "A": {"ticks": 5, "port": 50051, "log_path": ""},
+            "B": {"ticks": 5, "port": 50052, "log_path": ""},
+            "C": {"ticks": 5, "port": 50053, "log_path": ""}
+        },
+        trials=5,
+        timeout=60
+    ),
+    
+    # 2. High variance in clock speeds
+    "high_variance": Experiment(
+        name="high_variance",
+        description="Machines with widely varying clock rates (10x difference)",
+        type=ExperimentType.CLOCK_RATES,
+        machines={
+            "A": {"ticks": 1, "port": 50051, "log_path": ""},
+            "B": {"ticks": 5, "port": 50052, "log_path": ""},
+            "C": {"ticks": 10, "port": 50053, "log_path": ""}
+        },
+        trials=5,
+        timeout=60
+    ),
+    
+    # 3. Extremely fast machines
     "fast_clocks": Experiment(
         name="fast_clocks",
-        description="Machines running at higher clock rates",
+        description="All machines running at high clock rates",
         type=ExperimentType.CLOCK_RATES,
         machines={
             "A": {"ticks": 10, "port": 50051, "log_path": ""},
             "B": {"ticks": 12, "port": 50052, "log_path": ""},
-            "C": {"ticks": 8, "port": 50053, "log_path": ""}
+            "C": {"ticks": 15, "port": 50053, "log_path": ""}
         },
-        trials=3
+        trials=5,
+        timeout=60
     ),
     
-    "high_variance": Experiment(
-        name="high_variance",
-        description="Machines with widely varying clock rates",
+    # 4. One slow machine, others fast
+    "bottleneck": Experiment(
+        name="bottleneck",
+        description="One slow machine with faster peers - potential message queue buildup",
         type=ExperimentType.CLOCK_RATES,
         machines={
             "A": {"ticks": 1, "port": 50051, "log_path": ""},
-            "B": {"ticks": 10, "port": 50052, "log_path": ""},
-            "C": {"ticks": 5, "port": 50053, "log_path": ""}
+            "B": {"ticks": 8, "port": 50052, "log_path": ""},
+            "C": {"ticks": 8, "port": 50053, "log_path": ""}
         },
-        trials=3
+        trials=5,
+        timeout=60
     ),
     
+    # 5. Increasing speeds
+    "progressive": Experiment(
+        name="progressive",
+        description="Progressively faster machines",
+        type=ExperimentType.CLOCK_RATES,
+        machines={
+            "A": {"ticks": 2, "port": 50051, "log_path": ""},
+            "B": {"ticks": 4, "port": 50052, "log_path": ""},
+            "C": {"ticks": 6, "port": 50053, "log_path": ""}
+        },
+        trials=5,
+        timeout=60
+    ),
+    
+    # 6. More machines - scaling up the system
     "five_machines": Experiment(
         name="five_machines",
-        description="Simulation with five machines",
+        description="Increased scale with five machines",
+        type=ExperimentType.SCALE,
+        machines={
+            "A": {"ticks": 3, "port": 50051, "log_path": ""},
+            "B": {"ticks": 4, "port": 50052, "log_path": ""},
+            "C": {"ticks": 5, "port": 50053, "log_path": ""},
+            "D": {"ticks": 4, "port": 50054, "log_path": ""},
+            "E": {"ticks": 3, "port": 50055, "log_path": ""}
+        },
+        trials=5,
+        timeout=60
+    ),
+    
+    # 7. Long-running experiment
+    "long_running": Experiment(
+        name="long_running",
+        description="Extended run to observe long-term behavior",
         type=ExperimentType.SCALE,
         machines={
             "A": {"ticks": 3, "port": 50051, "log_path": ""},
             "B": {"ticks": 5, "port": 50052, "log_path": ""},
-            "C": {"ticks": 2, "port": 50053, "log_path": ""},
-            "D": {"ticks": 4, "port": 50054, "log_path": ""},
-            "E": {"ticks": 6, "port": 50055, "log_path": ""}
+            "C": {"ticks": 4, "port": 50053, "log_path": ""}
         },
-        trials=2
+        trials=3,
+        timeout=180  # 3 minutes per trial
+    ),
+    
+    # 8. Extreme imbalance
+    "extreme_imbalance": Experiment(
+        name="extreme_imbalance",
+        description="Extreme difference in clock rates",
+        type=ExperimentType.CLOCK_RATES,
+        machines={
+            "A": {"ticks": 1, "port": 50051, "log_path": ""},
+            "B": {"ticks": 20, "port": 50052, "log_path": ""},
+            "C": {"ticks": 2, "port": 50053, "log_path": ""}
+        },
+        trials=5,
+        timeout=60
     )
 }
 
