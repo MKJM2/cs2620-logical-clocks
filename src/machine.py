@@ -51,6 +51,7 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
         self.logger = logging.getLogger(f"machine-{machine_id}")
         self.clock = 0
         self.ticks_per_sec = config["ticks"]
+        self.internal_event_weight = config.get("internal_event_weight", 7)
         self.log_path = Path(config["log_path"])
         self.peers = peers
         self.queue = asyncio.Queue()
@@ -130,7 +131,7 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
             self._log_event("RECV", msg.sender_id)
             self.logger.info(f"processed message from {msg.sender_id}, clock now {self.clock}")
         else:
-            rand_val = random.randint(1, 10)
+            rand_val = random.randint(1, 3 + self.internal_event_weight)
             self.clock += 1
 
             if rand_val == 1:  # Send to the next machine
@@ -173,12 +174,13 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
 
 async def start_machine_from_args():
     if len(sys.argv) < 5:
-        logging.error("usage: python -m src.machine <machine_id> <port> <ticks> <log_path>")
+        logging.error("usage: python -m src.machine <machine_id> <port> <ticks> <log_path> <internal_event_weight>")
         sys.exit(1)
     machine_id = sys.argv[1]
     port = int(sys.argv[2])
     ticks = int(sys.argv[3])
     log_path = sys.argv[4]
+    internal_event_weight = int(sys.argv[5])
     peers = {}
     if "PEERS" in os.environ:
         peers_str = os.environ["PEERS"]
@@ -186,7 +188,7 @@ async def start_machine_from_args():
             if peer:
                 peer_id, peer_port = peer.split(":")
                 peers[peer_id] = {"port": int(peer_port)}
-    config = {"port": port, "ticks": ticks, "log_path": log_path}
+    config = {"port": port, "ticks": ticks, "log_path": log_path, "internal_event_weight": internal_event_weight}
     m = machine(machine_id, config, peers)
     await m.run()
 
