@@ -176,6 +176,7 @@ EXPERIMENTS: Dict[str, Experiment] = {
             "A": {"ticks": 1, "port": 50051, "log_path": ""},
             "B": {"ticks": 20, "port": 50052, "log_path": ""},
             "C": {"ticks": 2, "port": 50053, "log_path": ""}
+        },
         trials=3,
         timeout=60
     ),
