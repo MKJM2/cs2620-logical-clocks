@@ -13,6 +13,8 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
+from src.experiments import get_experiment, get_experiment_config_for_trial
+
 console = Console()
 
 
@@ -48,6 +50,7 @@ class orchestrator:
             else:
                 # Add new machine config
                 base_config[machine_id] = machine_overrides
+        console.log(f"[bold green]Applied configuration overrides: {overrides}[/]")
 
     async def start_machine(self, machine_id: str):
         config = self.config[machine_id]
@@ -323,8 +326,11 @@ async def main():
                         help='Override config parameter (e.g. "A:ticks 5")')
     parser.add_argument('-e', '--experiment', 
                         help='Run a predefined experiment from experiments.py')
+    parser.add_argument('-t', '--trial', type=int, default=1,
+                        help='Trial number for the experiment (default: 1)')
     args = parser.parse_args()
 
+    # Process overrides into a dictionary
     config_overrides = {}
     if args.override:
         for param, value in args.override:
@@ -338,31 +344,31 @@ async def main():
                 config_overrides[machine_id] = {}
                 
             # Convert value to appropriate type
-            if param_name == "port":
-                config_overrides[machine_id][param_name] = int(value)
-            elif param_name == "ticks":
+            if param_name in ["port", "ticks"]:
                 config_overrides[machine_id][param_name] = int(value)
             else:
                 config_overrides[machine_id][param_name] = value
 
+    # Handle experiment if specified
     if args.experiment:
         try:
-            from src.experiments import get_experiment
-            experiment_config = get_experiment(args.experiment)
+            experiment_config = get_experiment_config_for_trial(args.experiment, args.trial)
             if experiment_config:
+                console.log(f"[bold green]Running experiment: {args.experiment} (Trial {args.trial})[/]")
+                
                 # Merge with any manual overrides (manual overrides take precedence)
                 for machine_id, params in experiment_config.items():
                     if machine_id not in config_overrides:
                         config_overrides[machine_id] = {}
                     # Only add params that aren't already overridden manually
                     for param_name, value in params.items():
-                        if param_name not in config_overrides[machine_id]:
+                        if param_name not in config_overrides.get(machine_id, {}):
                             config_overrides[machine_id][param_name] = value
             else:
                 console.log(f"[bold red]Experiment '{args.experiment}' not found.[/]")
                 return
-        except ImportError:
-            console.log("[bold red]Experiments module not found. Create src/experiments.py first.[/]")
+        except ImportError as e:
+            console.log(f"[bold red]Error importing experiments module: {e}[/]")
             return
 
     orch = orchestrator(args.config, verbose=args.verbose, config_overrides=config_overrides)

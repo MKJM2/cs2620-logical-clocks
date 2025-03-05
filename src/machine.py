@@ -10,7 +10,7 @@ from typing import Dict
 import grpc
 from grpc import aio
 
-from .protos import clock_pb2, clock_pb2_grpc
+from protos import clock_pb2, clock_pb2_grpc
 
 ### Logging configuration for immediate flushing to orchestrator parent
 
