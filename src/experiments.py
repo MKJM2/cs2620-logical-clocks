@@ -54,6 +54,19 @@ class Experiment:
 
 # Define available experiments
 EXPERIMENTS: Dict[str, Experiment] = {
+    "baseline": Experiment(
+        name="baseline",
+        description="Machines running at randomly selected (1 to  6) tickrates, per assignment statemnet",
+        type=ExperimentType.CLOCK_RATES,
+        machines={
+            "A": {"ticks": 3, "port": 50051, "log_path": ""},
+            "B": {"ticks": 5, "port": 50052, "log_path": ""},
+            "C": {"ticks": 2, "port": 50053, "log_path": ""}
+        },
+        trials=5,
+        timeout=60
+    ),
+
     "fast_clocks": Experiment(
         name="fast_clocks",
         description="Machines running at higher clock rates",
@@ -63,7 +76,8 @@ EXPERIMENTS: Dict[str, Experiment] = {
             "B": {"ticks": 12, "port": 50052, "log_path": ""},
             "C": {"ticks": 8, "port": 50053, "log_path": ""}
         },
-        trials=3
+        trials=5,
+        timeout=60
     ),
     
     "high_variance": Experiment(
@@ -90,6 +104,58 @@ EXPERIMENTS: Dict[str, Experiment] = {
             "E": {"ticks": 6, "port": 50055, "log_path": ""}
         },
         trials=2
+    ),
+
+    "low_internal_prob": Experiment(
+        name="low_internal_prob",
+        description="Balanced machines with a lower probability of internal events",
+        type=ExperimentType.CLOCK_RATES,
+        machines={
+            "A": {"ticks": 5, "port": 50051, "log_path": "", "internal_event_weight": 2},
+            "B": {"ticks": 5, "port": 50052, "log_path": "", "internal_event_weight": 2},
+            "C": {"ticks": 5, "port": 50053, "log_path": "", "internal_event_weight": 2}
+        },
+        trials=5,
+        timeout=60
+    ),
+
+    "imbalanced_low_internal_prob": Experiment(
+        name="imbalanced_low_internal_prob",
+        description="Imbalanced machines with a lower probability of internal events, same tickrates as baseline",
+        type=ExperimentType.CLOCK_RATES,
+        machines={
+            "A": {"ticks": 3, "port": 50051, "log_path": "", "internal_event_weight": 2},
+            "B": {"ticks": 5, "port": 50052, "log_path": "", "internal_event_weight": 2},
+            "C": {"ticks": 2, "port": 50053, "log_path": "", "internal_event_weight": 2}
+        },
+        trials=5,
+        timeout=60
+    ),
+
+    "high_internal_prob": Experiment(
+        name="high_internal_prob",
+        description="Balanced machines with a higher probability of internal events",
+        type=ExperimentType.CLOCK_RATES,
+        machines={
+            "A": {"ticks": 5, "port": 50051, "log_path": "", "internal_event_weight": 17},
+            "B": {"ticks": 5, "port": 50052, "log_path": "", "internal_event_weight": 17},
+            "C": {"ticks": 5, "port": 50053, "log_path": "", "internal_event_weight": 17}
+        },
+        trials=5,
+        timeout=60
+    ),
+
+    "imbalanced_high_internal_prob": Experiment(
+        name="imbalanced_high_internal_prob",
+        description="Imbalanced machines with a higher probability of internal events, same tickrates as baseline",
+        type=ExperimentType.CLOCK_RATES,
+        machines={
+            "A": {"ticks": 3, "port": 50051, "log_path": "", "internal_event_weight": 17},
+            "B": {"ticks": 5, "port": 50052, "log_path": "", "internal_event_weight": 17},
+            "C": {"ticks": 2, "port": 50053, "log_path": "", "internal_event_weight": 17}
+        },
+        trials=5,
+        timeout=60
     )
 }
 

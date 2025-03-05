@@ -74,6 +74,7 @@ class orchestrator:
             str(config["port"]),
             str(config["ticks"]),
             config["log_path"],
+            str(config.get("internal_event_weight", 7)),
             env={**os.environ, **self._peer_env(peers), "PYTHONUNBUFFERED": "1"},
             stdout=asyncio.subprocess.PIPE if self.verbose else asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE if self.verbose else asyncio.subprocess.DEVNULL,
