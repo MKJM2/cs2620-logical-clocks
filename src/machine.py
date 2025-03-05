@@ -62,7 +62,7 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
                 elapsed = time.time() - start_time
                 await asyncio.sleep(max(0, 1 / self.ticks_per_sec - elapsed))
         except asyncio.CancelledError:
-            console.log(f"machine {self.id}: shutting down...", style="bold red")
+            console.log(f"shutting down...", style="bold red")
             await self.server.stop(grace=None)
 
     async def process_tick(self):
@@ -70,23 +70,23 @@ class machine(clock_pb2_grpc.MachineServiceServicer):
             msg = await self.queue.get()
             self.clock = max(self.clock, msg.logical_time) + 1
             self._log_event("RECV", msg.sender_id)
-            console.log(f"machine {self.id}: processed message from {msg.sender_id}, clock now {self.clock}", style="magenta")
+            console.log(f"processed message from {msg.sender_id}, clock now {self.clock}", style="magenta")
         else:
             rand_val = random.randint(1, 10)
             self.clock += 1
             if rand_val == 1:
                 target_id = "B" if self.id == "A" else "A"
                 await self._send_to(target_id)
-                console.log(f"machine {self.id}: sent message to {target_id}, clock now {self.clock}", style="cyan")
+                console.log(f"sent message to {target_id}, clock now {self.clock}", style="cyan")
             elif rand_val == 2:
                 await self._send_to("C")
-                console.log(f"machine {self.id}: sent message to C, clock now {self.clock}", style="cyan")
+                console.log(f"sent message to C, clock now {self.clock}", style="cyan")
             elif rand_val == 3:
                 await self._send_broadcast()
-                console.log(f"machine {self.id}: broadcast message to all peers, clock now {self.clock}", style="cyan")
+                console.log(f"broadcast message to all peers, clock now {self.clock}", style="cyan")
             else:
                 self._log_event("INTERNAL")
-                console.log(f"machine {self.id}: internal event, clock now {self.clock}", style="yellow")
+                console.log(f"internal event, clock now {self.clock}", style="yellow")
 
     async def _send_to(self, target_id: str):
         stub = self.stubs.get(target_id)
