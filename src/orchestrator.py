@@ -13,12 +13,18 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
+from src.experiments import get_experiment, get_experiment_config_for_trial
+
 console = Console()
 
 
 class orchestrator:
-    def __init__(self, config_path: str = "config.toml", verbose: bool = False):
-        self.config = self._load_config(config_path)
+    def __init__(self, config_path: str = "config.toml", verbose: bool = False, config_overrides = None):
+        base_config = self._load_config(config_path)
+        # Apply any overrides from experiments
+        if config_overrides:
+            self._apply_config_overrides(base_config, config_overrides)
+        self.config = base_config
         self.processes: dict[str, asyncio.subprocess.Process] = {}
         self.running = True
         self.start_time = None
@@ -34,6 +40,17 @@ class orchestrator:
     def _load_config(self, path: str) -> dict:
         with open(path, "rb") as f:
             return tomli.load(f)["machines"]
+
+    def _apply_config_overrides(self, base_config: dict, overrides: dict):
+        """Apply experimental overrides to the base configuration."""
+        for machine_id, machine_overrides in overrides.items():
+            if machine_id in base_config:
+                # Update existing machine config
+                base_config[machine_id].update(machine_overrides)
+            else:
+                # Add new machine config
+                base_config[machine_id] = machine_overrides
+        console.log(f"[bold green]Applied configuration overrides: {overrides}[/]")
 
     async def start_machine(self, machine_id: str):
         config = self.config[machine_id]
@@ -305,9 +322,56 @@ async def main():
                         help='Enable verbose output from machine processes')
     parser.add_argument('-c', '--config', default="config.toml",
                         help='Path to configuration file (default: config.toml)')
+    parser.add_argument('-o', '--override', action='append', nargs=2, metavar=('MACHINE:PARAM', 'VALUE'),
+                        help='Override config parameter (e.g. "A:ticks 5")')
+    parser.add_argument('-e', '--experiment', 
+                        help='Run a predefined experiment from experiments.py')
+    parser.add_argument('-t', '--trial', type=int, default=1,
+                        help='Trial number for the experiment (default: 1)')
     args = parser.parse_args()
 
-    orch = orchestrator(args.config, verbose=args.verbose)
+    # Process overrides into a dictionary
+    config_overrides = {}
+    if args.override:
+        for param, value in args.override:
+            machine_param = param.split(':')
+            if len(machine_param) != 2:
+                console.log(f"[bold red]Invalid override format: {param}. Use MACHINE:PARAM format.[/]")
+                return
+            
+            machine_id, param_name = machine_param
+            if machine_id not in config_overrides:
+                config_overrides[machine_id] = {}
+                
+            # Convert value to appropriate type
+            if param_name in ["port", "ticks"]:
+                config_overrides[machine_id][param_name] = int(value)
+            else:
+                config_overrides[machine_id][param_name] = value
+
+    # Handle experiment if specified
+    if args.experiment:
+        try:
+            experiment_config = get_experiment_config_for_trial(args.experiment, args.trial)
+            if experiment_config:
+                console.log(f"[bold green]Running experiment: {args.experiment} (Trial {args.trial})[/]")
+                
+                # Merge with any manual overrides (manual overrides take precedence)
+                for machine_id, params in experiment_config.items():
+                    if machine_id not in config_overrides:
+                        config_overrides[machine_id] = {}
+                    # Only add params that aren't already overridden manually
+                    for param_name, value in params.items():
+                        if param_name not in config_overrides.get(machine_id, {}):
+                            config_overrides[machine_id][param_name] = value
+            else:
+                console.log(f"[bold red]Experiment '{args.experiment}' not found.[/]")
+                return
+        except ImportError as e:
+            console.log(f"[bold red]Error importing experiments module: {e}[/]")
+            return
+
+    orch = orchestrator(args.config, verbose=args.verbose, config_overrides=config_overrides)
     await orch.run()
 
 
