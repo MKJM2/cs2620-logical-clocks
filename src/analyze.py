@@ -173,7 +173,8 @@ def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
             "broadcast_events": broadcast_events,
             "total_events": total_events,
             "final_clock": group["clock"].iloc[-1],
-            "run_duration": group["relative_time"].iloc[-1]
+            "run_duration": group["relative_time"].iloc[-1],
+            "event_counts": event_counts
         })
     
     metrics_df = pd.DataFrame(metrics)
@@ -558,6 +559,59 @@ def plot_queue_sizes_over_time(
     plt.close()
 
 
+def plot_event_distribution(metrics_df: pd.DataFrame, experiment_name: str, save_dir: Path) -> None:
+    """
+    Plot event type distribution for each machine.
+    
+    Args:
+        metrics_df: DataFrame containing metrics
+        experiment_name: Name of the experiment
+        save_dir: Directory to save plots
+    """
+    if metrics_df.empty:
+        return
+    
+    save_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Group by machine and average across trials
+    summary = metrics_df.groupby("machine_id").agg({
+        "internal_events": "mean",
+        "send_events": "mean",
+        "recv_events": "mean",
+        "broadcast_events": "mean"
+    }).reset_index()
+    
+    # Prepare data for plotting
+    machines = summary["machine_id"]
+    events = ["Internal", "Send", "Receive", "Broadcast"]
+    data = np.array([
+        summary["internal_events"],
+        summary["send_events"],
+        summary["recv_events"],
+        summary["broadcast_events"]
+    ])
+    
+    # Create plot
+    plt.figure(figsize=(12, 7))
+    
+    # Create the bar chart
+    bottom = np.zeros(len(machines))
+    for i, event_type in enumerate(events):
+        plt.bar(machines, data[i], bottom=bottom, label=event_type)
+        bottom += data[i]
+    
+    plt.title(f"Event Distribution - {experiment_name}")
+    plt.xlabel("Machine")
+    plt.ylabel("Number of Events")
+    plt.legend()
+    
+    # Save plot
+    plot_path = save_dir / f"{experiment_name}_event_distribution.png"
+    plt.savefig(plot_path)
+    console.log(f"[green]Saved plot: {plot_path}[/]")
+    plt.close()
+
+
 def analyze_experiment(experiment_name: str, output_dir: Path) -> None:
     """
     Analyze an experiment using time series metrics and generate refined visualizations.
@@ -599,6 +653,8 @@ def analyze_experiment(experiment_name: str, output_dir: Path) -> None:
     plot_jumps_over_time(ts_df, experiment_name, plots_dir)
     # Plot queue sizes over time.
     plot_queue_sizes_over_time(ts_df, experiment_name, plots_dir)
+    # Plot event distribution
+    plot_event_distribution(metrics_df, experiment_name, plots_dir)
 
 
 def main() -> None:
